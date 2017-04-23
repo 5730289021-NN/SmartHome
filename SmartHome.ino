@@ -7,6 +7,8 @@
 #include <TimerOne.h>           //Timer Interrupt
 
 //Pin Define
+#define relayPin    4
+#define buzzerPin   5
 #define rtRstPin    8 
 #define rtDataPin   9
 #define rtClkPin    10
@@ -34,12 +36,27 @@ decode_results results;
 String Hour, Minute, Second;
 String Day, Date, Month, Year;
 int mode = 0;
-int fadingTime = 1500;
+int defaultFadingTime = 2000;
 bool lcdDisplayEnb = true;
 bool soundEnb = true;
 
+bool numericInputAvailable = false;
+bool numericKeyAvailable = false;
+String numericKey = "0";
+
+bool choiceInputAvailable = false;
+bool choiceKeyAvailable = false;
+int choiceKey = 0;
+
+
 String inputTime = "00:00:00";
-String relativeTime = "00:00:00";
+
+bool timePassed = false;
+bool alarmSet = false;
+String alarmTime  = "00:00:00";
+bool alarmTrigType = true;
+
+int cursorLocation = 0;
 
 
 //Functions
@@ -71,18 +88,39 @@ String getDate() {
   return Day + " " + Date + "/" + Month + "/" + Year;
 }
 
-void fadeout() {
-  delay(fadingTime);
+void fadeout(int _time) {
+  if(_time == 0) delay(defaultFadingTime);
+  else delay(_time);
   lcd.clear();
+}
+
+void trig(bool state){
+  digitalWrite(relayPin,state);
+  //play();//should be asynchronous;
 }
 
 
 //Timer Interrupt Function
-void updateTime()
-{
+void updateTime(){
+  //Update current time 
   Time t = rtc.time();
-  if(dayAsString(t.day).equals("Unknownday"))
+  if(dayAsString(t.day).equals("Unknownday"))//In case of RTC hardware bug occured.
   {
+    Second = Second + 1;
+    if(Second.equals("60"))
+    {
+      Second = "00";
+      Minute = String(Minute.toInt() + 1);
+    }
+    if(Minute.equals("60"))
+    {
+      Minute = "00";
+      Hour = String(Hour.toInt() + 1);
+    }
+    if(Hour.equals("24"))
+    {
+      Hour = "00";
+    }
     return;
   }
   else
@@ -90,10 +128,16 @@ void updateTime()
     Hour = t.hr;
     Minute = t.min;
     Second = t.sec;
-    Day = dayAsString(t.day);
+    String _Day = dayAsString(t.day);
+    if(_Day.length() >5) Day = _Day; 
     Date = t.date;
     Month = t.mon;
     Year = t.yr%100;
+  }
+  //Update Alarm
+  if(alarmSet)
+  {
+    timePassed = true;
   }
 }
 
@@ -112,33 +156,170 @@ void setup() {
 }
 
 void loop() {
+  if(timePassed)
+  {
+    timePassed = false;
+    String _hour = String(alarmTime[0]) + String(alarmTime[1]);
+    String _minute = String(alarmTime[3]) + String(alarmTime[4]);
+    String _second = String(alarmTime[6]) + String(alarmTime[7]);
+    unsigned long alarmTimeSecond = (_hour.toInt() * 3600) + (_minute.toInt() * 60) + _second.toInt();
+    alarmTimeSecond--;
+    _hour = String(alarmTimeSecond/3600);
+    _minute = String((alarmTimeSecond%3600)/60);
+    _second =  String(alarmTimeSecond%60);
+    alarmTime = (_hour.length()==1?"0":"") + _hour + ":" + (_minute.length()==1?"0":"") + _minute + ":" + (_second.length()==1?"0":"") + _second;
+    Serial.println("Alarm in: " + alarmTime);
+    if(alarmTime.equals("00:00:00"))
+    {
+      alarmSet = false;
+      lcd.clear();
+      if(alarmTrigType) lcdDisplay("Time's up", "Triggering");
+      else lcdDisplay("Time's up", "Untriggering");
+      trig(alarmTrigType);
+      fadeout(10000);
+    }
+  }
+  
   switch(mode)
   {
     case 0://Show time
-      {
-        if(getTime().equals("00:00:00")) lcd.clear();
-        lcdDisplay(getTime(),getDate());
-        break;
-      }
+    {
+      lcd.noCursor();
+      if(getTime().equals("00:00:00")) lcd.clear();
+      lcdDisplay(getTime(),getDate());
+      Serial.println(getTime() + " " + getDate());
+      break;
+    }
     case 1://Alarm
+    {
+      if(alarmSet)
       {
-        lcdDisplay("Alarm ","     " + inputTime);
-        break;
+        lcdDisplay("Alarm - " + alarmTime,"1.Clear Alarm");
+        choiceInputAvailable = true;
+        if(choiceKeyAvailable)
+        {
+          if(choiceKey == 1)
+          {
+            alarmSet = false;
+            lcd.clear();
+          }
+        }
+      }else
+      {
+        lcd.cursor();
+        lcdDisplay("Set Alarm ","    " + inputTime);
+        numericInputAvailable = true;
+        lcd.setCursor(cursorLocation + 4,1);
+        if(numericKeyAvailable)
+        {
+          numericInputAvailable = false;
+          numericKeyAvailable = false;
+          inputTime[cursorLocation] = numericKey[0];
+          cursorLocation++;
+          if(cursorLocation == 2) cursorLocation++;//First ':'
+          else{
+            if(cursorLocation == 5 || cursorLocation == 8)//At Second ':' or after last number
+            {
+              String checker = String(inputTime[cursorLocation-2]) + String(inputTime[cursorLocation-1]);
+              if(checker.toInt() >= 60)
+              {
+                inputTime[cursorLocation-2] = '5';
+                inputTime[cursorLocation-1] = '9';
+              }
+              if(cursorLocation == 5) cursorLocation++;
+              if(cursorLocation == 8) cursorLocation = 7;
+            }
+          }
+        }
       }
+      break;
+    }
+    case 11://Alarm After select time
+    {
+      lcd.noCursor();
+      lcdDisplay("At that time do?","1.Trig 2.Untrig");
+      choiceInputAvailable = true;
+      numericInputAvailable = false;
+      if(choiceKeyAvailable)
+      {
+        choiceInputAvailable = false;
+        choiceKeyAvailable = false;
+        switch(choiceKey)
+        {
+          case 1:
+          {
+            lcd.clear();
+            lcdDisplay("Trig device","in " + inputTime);
+            alarmTime = inputTime;
+            alarmTrigType = true;
+            fadeout(0);
+            alarmSet = true;
+            mode = 1;
+            break;
+          }
+          case 2:
+          {
+            lcd.clear();
+            lcdDisplay("Untrig device","in " + inputTime);
+            alarmTime = inputTime;
+            alarmTrigType = false;
+            fadeout(0);
+            alarmSet = true;
+            mode = 1;
+            break;
+          }
+          default:
+          {
+            lcdDisplay("Impossible","is possible");
+            fadeout(0);
+            break;
+          }
+        }
+        
+      }
+      break;
+    }
     case 2://Trigger
+    {
+      lcd.noCursor();
+      lcdDisplay("Trigger 1.Trig","        2.Untrig");
+      choiceInputAvailable = true;
+      numericInputAvailable = false;
+      if(choiceKeyAvailable)
       {
-        lcdDisplay("Trigger 1.Trig","        2.Untrig");
-        break;
+        choiceInputAvailable = false;
+        choiceKeyAvailable = false;
+        switch(choiceKey)
+        {
+          case 1:
+          {
+            trig(true);
+            lcd.clear();
+            lcdDisplay("Manual: Trig","on the device");
+            fadeout(10000);
+            break;
+          }
+          case 2:
+          {
+            trig(false);
+            lcd.clear();
+            lcdDisplay("Manual: Untrig","off the device");
+            fadeout(10000);
+            break;
+          }
+        }
       }
+      break;
+    }
     case 3://Setting
-      {
-        lcdDisplay("Settings 1.Time","         2.Sound");
-        break;
-      }
+    {
+      lcd.noCursor();
+      lcdDisplay("Settings 1.Time","         2.Sound");
+      break;
+    }
   }
   
   if (irrecv.decode(&results)) {
-    //Serial.println(results.value,HEX);
     for(int i = 0;i<irButtonSize;i++)
     {
       if(results.value == remoteValue[i])
@@ -166,6 +347,7 @@ void loop() {
             lcd.clear();
             if(mode < 4) mode++;
             if(mode == 4) mode = 0;
+            cursorLocation = 0;
             break;
           }
           case 2://Sound Enb Button
@@ -174,22 +356,103 @@ void loop() {
             lcd.clear();
             if(soundEnb) lcdDisplay("Sound: Off","keep silence");
             else lcdDisplay("Sound: On","make it loud");
-            fadeout();
+            fadeout(0);
             break;
           }
-
-          //case //freeform
+          case 11://U/SD Button
+          {
+            lcd.clear();
+            if(mode == 1)
+            {
+              mode = 11;
+            }
+            break;
+          }
+          case 4://when click Back
+          {
+            if(numericInputAvailable)
+            {
+              //numericKey = remoteString[i];
+              //numericKeyAvailable = true;
+              cursorLocation--;
+              switch(cursorLocation)
+              {
+                case -1:
+                {
+                  cursorLocation = 0;
+                  break;
+                }
+                case 2:
+                {
+                  cursorLocation = 1;
+                  break;
+                }
+                case 5:
+                {
+                  cursorLocation = 4;
+                  break;
+                }
+              }
+            }
+            else Serial.println("Numeric unaccepted: " + remoteString[i]);
+            break;
+          }
+          case 5://when click Next
+          {
+            if(numericInputAvailable)
+            {
+              cursorLocation++;
+              switch(cursorLocation)
+              {
+                case 2:
+                {
+                  cursorLocation = 3;
+                  break;
+                }
+                case 5:
+                {
+                  cursorLocation = 6;
+                  break;
+                }
+                case 8:
+                {
+                  cursorLocation = 7;
+                  break;
+                }
+              }
+            }
+            else Serial.println("Numeric unaccepted: " + remoteString[i]);
+            break;
+            
+          }
           
           case 12://when click 1
-          {
-            
-          }
           case 13://when click 2
           {
-            //if(mode >= 1 && mode <= 3) mode = (mode * 10) + 2;
-            
+            if(choiceInputAvailable) 
+            {
+              choiceKey = remoteString[i].toInt();
+              choiceKeyAvailable = true;
+            }
+            else Serial.println("Choice unaccepted: " + remoteString[i]);
           }
-          
+          case  9://when click 0
+          case 14://when click 3
+          case 15://when click 4
+          case 16://when click 5
+          case 17://when click 6
+          case 18://when click 7
+          case 19://when click 8
+          case 20://when click 9
+          {
+            if(numericInputAvailable)
+            {
+              numericKey = remoteString[i];
+              numericKeyAvailable = true;
+            }
+            else Serial.println("Numeric unaccepted: " + remoteString[i]);
+            break;
+          }
           default:
           {
             break;
@@ -209,25 +472,25 @@ switch(mode)
               case 0:
               {
                 lcdDisplay("Mode: Clock","show time");
-                fadeout();
+                fadeout(0);
                 break;
               }
               case 1:
               {
                 lcdDisplay("Mode: Alarm","conduct on time");
-                fadeout();
+                fadeout(0);
                 break;
               }
               case 2:
               {
                 lcdDisplay("Mode: Trigger","turn on/off dev.");
-                fadeout();
+                fadeout(0);
                 break;
               }
               case 3:
               {
                 lcdDisplay("Mode: Setting","set your things");
-                fadeout();
+                fadeout(0);
                 break;
               }
             }
