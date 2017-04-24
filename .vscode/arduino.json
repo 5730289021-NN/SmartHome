@@ -1,4 +1,5 @@
 {
     "board": "arduino:avr:uno",
-    "sketch": "SmartHome.ino"
+    "sketch": "SmartHome.ino",
+    "port": "COM3"
 }
