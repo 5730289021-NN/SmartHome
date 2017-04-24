@@ -13,17 +13,8 @@
 #define rtDataPin   9
 #define rtClkPin    10
 #define irReceivePin 11
-
-//Display Type Define
-#define numericType 1
-#define choiceType  2
-#define okType      3
-
 //Other Define
 #define irButtonSize  21
-
-
-const bool debugMode = true;
 
 //Realtime Clock Module
 DS1302 rtc(rtRstPin, rtDataPin, rtClkPin);
@@ -40,7 +31,6 @@ const long remoteValue[irButtonSize] = {0xFFA25D,0xFF629D,0xFFE21D,0xFF22DD,0xFF
                                   0xFF7A85,0xFF10EF,0xFF38C7,0xFF5AA5,0xFF42BD,0xFF4AB5,0xFF52AD};
 IRrecv irrecv(irReceivePin);
 decode_results results;
-
 
 //Global variables
 String Hour, Minute, Second;
@@ -61,7 +51,7 @@ int choiceKey = 0;
 bool okInputAvailable = false;
 bool okKeyAvailable = false;
 
-
+String settingTime = "00:00:00";
 String inputTime = "00:00:00";
 
 bool alarmTimePassed = false;
@@ -69,11 +59,8 @@ bool alarmSet = false;
 String alarmTime  = "00:00:00";
 bool alarmTrigType = true;
 
-String settingTime = "00:00:00";
-
 int cursorLocation = 0;
 
-int buzzerMode = 0;
 
 //Functions
 String dayAsString(const Time::Day day) {
@@ -96,68 +83,6 @@ void lcdDisplay(String first,String second) {
   lcd.print(second);
 }
 
-int lcdDisplayAdvanced(int type,String first,String second){
-  lcd.setCursor(0, 0);
-  lcd.print(first);
-  lcd.setCursor(0, 1);
-  lcd.print(second);
-
-  choiceInputAvailable = false;
-  numericInputAvailable = false;
-  okInputAvailable = false;
-
-  switch(type)
-  {
-    case numericType:
-    {
-      lcd.cursor();
-      numericInputAvailable = true;
-      lcd.setCursor(cursorLocation + 4,1);
-      if(numericKeyAvailable)
-      {
-        numericInputAvailable = false;
-        numericKeyAvailable = false;
-        return numericKey[0];
-      }
-      break;
-    }
-    case choiceType:
-    {
-      lcd.noCursor();
-      choiceInputAvailable = true;
-      numericInputAvailable = false;
-      okInputAvailable = false;
-      if(choiceKeyAvailable)
-      {
-        choiceInputAvailable = false;
-        choiceKeyAvailable = false;
-        lcd.clear();
-        switch(choiceKey)
-        {
-          case 1: return 1;
-          case 2: return 2;
-          //alarmSet = false;
-          //lcd.clear();
-        }
-      }
-      break;
-    }
-    case okType:
-    {
-      lcd.noCursor();
-      okInputAvailable = true;
-      if(okKeyAvailable)
-      {
-        okInputAvailable = false;
-        okKeyAvailable = false;
-        return 1;
-      }
-      break;
-    }
-  }
-  return -1;
-}
-
 String getTime() {
   return (Hour.length()==1?"0":"") + Hour + ":" + (Minute.length()==1?"0":"") + Minute + ":" + (Second.length()==1?"0":"") + Second;
 }
@@ -174,36 +99,22 @@ void fadeout(int _time) {
 
 void trig(bool state){
   digitalWrite(relayPin,state);
-  switch(buzzerMode)
+  if(soundEnb)
   {
-    case 0://AC
+    for(int i = 0;i<5;i++)
     {
-      if(soundEnb)
-      {
-        for(int i = 0;i<10;i++)
-        {
-          analogWrite(buzzerPin,365);
-          delay(500); // Short delay between notes.
-          analogWrite(buzzerPin,0);
-          delay(500);
-        }
-      }else
-      {
-        delay(10000);
-      }
+      analogWrite(5,128);
+      delay(1000);
+      analogWrite(5,0);
+      delay(1000);
     }
-    case 1://DC
-    {
-      if(soundEnb)
-      {
-        analogWrite(buzzerPin,365);
-        delay(10000);
-        analogWrite(buzzerPin,0);
-      }
-      else delay(10000);
-    }
+  }else
+  {
+    delay(5000);
   }
+  fadeout(100);
 }
+
 
 //Timer Interrupt Function
 void updateTime(){
@@ -248,7 +159,7 @@ void updateTime(){
 
 void setup() {
   //UART
-  if(debugMode) Serial.begin(9600);
+  Serial.begin(9600);
   //IR Remote Controller Module
   irrecv.enableIRIn(); // Start the receiver
   //Liquid Crystal
@@ -264,16 +175,16 @@ void loop() {
   if(alarmTimePassed)
   {
     alarmTimePassed = false;
-    String _hour = alarmTime.substring(0,2);
-    String _minute = alarmTime.substring(3,5);
-    String _second = alarmTime.substring(6,8);
+    String _hour = String(alarmTime[0]) + String(alarmTime[1]);
+    String _minute = String(alarmTime[3]) + String(alarmTime[4]);
+    String _second = String(alarmTime[6]) + String(alarmTime[7]);
     unsigned long alarmTimeSecond = (_hour.toInt() * 3600) + (_minute.toInt() * 60) + _second.toInt();
     alarmTimeSecond--;
     _hour = String(alarmTimeSecond/3600);
     _minute = String((alarmTimeSecond%3600)/60);
     _second =  String(alarmTimeSecond%60);
     alarmTime = (_hour.length()==1?"0":"") + _hour + ":" + (_minute.length()==1?"0":"") + _minute + ":" + (_second.length()==1?"0":"") + _second;
-    if(debugMode) Serial.println("Alarm in: " + alarmTime);
+    Serial.println("Alarm in: " + alarmTime);
     if(alarmTime.equals("00:00:00"))
     {
       alarmSet = false;
@@ -281,7 +192,6 @@ void loop() {
       if(alarmTrigType) lcdDisplay("Time's up", "Triggering");
       else lcdDisplay("Time's up", "Untriggering");
       trig(alarmTrigType);
-      fadeout(100);
     }
   }
   
@@ -292,23 +202,36 @@ void loop() {
       lcd.noCursor();
       if(getTime().equals("00:00:00")) lcd.clear();
       lcdDisplay(getTime(),getDate());
-      if(debugMode) Serial.println(getTime() + " " + getDate());
+      Serial.println(getTime() + " " + getDate());
       break;
     }
     case 1://Alarm
     {
       if(alarmSet)
       {
-        if(lcdDisplayAdvanced(choiceType,"Alarm - " + alarmTime,"1.Clear Alarm") == 1)
+        lcdDisplay("Alarm - " + alarmTime,"1.Clear Alarm");
+        choiceInputAvailable = true;
+        if(choiceKeyAvailable)
         {
+          choiceInputAvailable = false;
+          choiceKeyAvailable = false;
+          if(choiceKey == 1)
+          {
             alarmSet = false;
+            lcd.clear();
+          }
         }
       }else
       {
-        int numeric = lcdDisplayAdvanced(numericType,"Set Alarm ","    " + inputTime);
-        if(numeric != -1)
+        lcd.cursor();
+        lcdDisplay("Set Alarm ","    " + inputTime);
+        numericInputAvailable = true;
+        lcd.setCursor(cursorLocation + 4,1);
+        if(numericKeyAvailable)
         {
-          inputTime[cursorLocation] = numeric;
+          numericInputAvailable = false;
+          numericKeyAvailable = false;
+          inputTime[cursorLocation] = numericKey[0];
           cursorLocation++;
           if(cursorLocation == 2) cursorLocation++;//First ':'
           else{
@@ -325,7 +248,6 @@ void loop() {
             }
           }
         }
-        //Special Case...hardcode
         okInputAvailable = true;
         if(okKeyAvailable)
         {
@@ -333,15 +255,21 @@ void loop() {
           okKeyAvailable = false;
           mode = 11;
         }
+        
       }
       break;
     }
     case 11://Alarm After select time
     {
-      int choice = lcdDisplayAdvanced(choiceType,"At that time do?","1.Trig 2.Untrig");
-      if(choice != -1)
+      lcd.noCursor();
+      lcdDisplay("At that time do?","1.Trig 2.Untrig");
+      choiceInputAvailable = true;
+      numericInputAvailable = false;
+      if(choiceKeyAvailable)
       {
-        switch(choice)
+        choiceInputAvailable = false;
+        choiceKeyAvailable = false;
+        switch(choiceKey)
         {
           case 1:
           {
@@ -365,31 +293,42 @@ void loop() {
             mode = 1;
             break;
           }
+          default:
+          {
+            lcdDisplay("Impossible","is possible");
+            fadeout(0);
+            break;
+          }
         }
+        
       }
       break;
     }
     case 2://Trigger
     {
-      int choice = lcdDisplayAdvanced(choiceType,"Trigger 1.Trig","        2.Untrig");
-      if(choice != -1)
+      lcd.noCursor();
+      lcdDisplay("Trigger 1.Trig","        2.Untrig");
+      choiceInputAvailable = true;
+      numericInputAvailable = false;
+      if(choiceKeyAvailable)
       {
-        switch(choice)
+        choiceInputAvailable = false;
+        choiceKeyAvailable = false;
+        switch(choiceKey)
         {
           case 1:
           {
             lcd.clear();
             lcdDisplay("Manual: Trig","on the device");
             trig(true);
-            fadeout(100);
             break;
           }
           case 2:
           {
+            
             lcd.clear();
             lcdDisplay("Manual: Untrig","off the device");
             trig(false);
-            fadeout(100);
             break;
           }
         }
@@ -398,12 +337,17 @@ void loop() {
     }
     case 3://Setting
     {
-      int choice = lcdDisplayAdvanced(choiceType,"Settings 1.Time","         2.Sound");
-      if(choice != -1)
+      lcd.noCursor();
+      lcdDisplay("Settings 1.Time","        ");
+      choiceInputAvailable = true;
+      numericInputAvailable = false;
+      if(choiceKeyAvailable)
       {
-       switch(choice)
+        choiceInputAvailable = false;
+        choiceKeyAvailable = false;
+        switch(choiceKey)
         {
-          case 1://Set time
+          case 1://Set t
           {
             mode = 31;
             settingTime = getTime();
@@ -423,10 +367,15 @@ void loop() {
     }
     case 31://Set Time
     {
-      int numeric = lcdDisplayAdvanced(numericType,"Set the clock","    " + settingTime);
-      if(numeric != -1)
+      lcdDisplay("Set the clock","    " + settingTime);
+      lcd.cursor();
+      numericInputAvailable = true;
+      lcd.setCursor(cursorLocation + 4,1);
+      if(numericKeyAvailable)
       {
-        settingTime[cursorLocation] = numeric;
+        numericInputAvailable = false;
+        numericKeyAvailable = false;
+        settingTime[cursorLocation] = numericKey[0];
         cursorLocation++;
         if(cursorLocation == 2) cursorLocation++;//First ':'
         else{
@@ -447,8 +396,10 @@ void loop() {
       okInputAvailable = true;
       if(okKeyAvailable)
       {
+        okInputAvailable = false;
+        okKeyAvailable = false;
         lcd.noCursor();
-        mode = 3;
+        lcd.clear();
         lcdDisplay("Time is set", settingTime);
         String _hour = String(settingTime[0]) + String(settingTime[1]);
         String _minute = String(settingTime[3]) + String(settingTime[4]);
@@ -460,39 +411,12 @@ void loop() {
         //Time t(2017, 4, 24, _hour.toInt(), _minute.toInt(), _second.toInt(), _t.day);
         rtc.time(t);
         rtc.writeProtect(true);
+        mode = 0;
         fadeout(0);
       }
       break;
     }
-    case 32://Set Sound
-    {
-      int choice = lcdDisplayAdvanced(choiceType,"Select Sound","1.AC 2.DC");
-      if(choice != -1)
-        choiceInputAvailable = false;
-        choiceKeyAvailable = false;
-        switch(choiceKey)
-        {
-          case 1://AC
-          {
-            buzzerMode = 0;
-            mode = 3;
-            lcd.clear();
-            lcdDisplay("Sound Mode","      AC");
-            fadeout(0);
-            break;
-          }
-          case 2://DC 
-          {
-            buzzerMode = 1;
-            mode = 3;
-            lcd.clear();
-            lcdDisplay("Sound Mode","      DC");
-            fadeout(0);
-            break;
-          }
-        }
-      }
-      break;
+    break;
   }
   
   if (irrecv.decode(&results)) {
@@ -500,7 +424,7 @@ void loop() {
     {
       if(results.value == remoteValue[i])
       {
-        if(debugMode) Serial.println(i);
+        Serial.println(i);
         switch(i)
         {
           case 0://Power Button
@@ -530,20 +454,26 @@ void loop() {
           {
             soundEnb = !soundEnb;
             lcd.clear();
-            if(soundEnb) lcdDisplay("Sound: Off","keep silence");
-            else lcdDisplay("Sound: On","make it loud");
+            if(soundEnb) lcdDisplay("Sound: On","make it loud");
+            else lcdDisplay("Sound: Off","keep silence");
             fadeout(0);
             break;
           }
           case 11://U/SD Button
           {
             lcd.clear();
-            if(okInputAvailable) okKeyAvailable = true;
+            if(okInputAvailable)
+            {
+              okKeyAvailable = true;
+            }
+            break;
           }
           case 4://when click Back
           {
             if(numericInputAvailable)
             {
+              //numericKey = remoteString[i];
+              //numericKeyAvailable = true;
               cursorLocation--;
               switch(cursorLocation)
               {
@@ -564,10 +494,7 @@ void loop() {
                 }
               }
             }
-            else
-            {
-              if(debugMode) Serial.println("Numeric unaccepted: " + remoteString[i]);
-            }
+            else Serial.println("Numeric unaccepted: " + remoteString[i]);
             break;
           }
           case 5://when click Next
@@ -594,10 +521,7 @@ void loop() {
                 }
               }
             }
-            else
-            {
-              if(debugMode) Serial.println("Numeric unaccepted: " + remoteString[i]);
-            }
+            else Serial.println("Numeric unaccepted: " + remoteString[i]);
             break;
             
           }
@@ -610,10 +534,7 @@ void loop() {
               choiceKey = remoteString[i].toInt();
               choiceKeyAvailable = true;
             }
-            else
-            {
-              if(debugMode) Serial.println("Choice unaccepted: " + remoteString[i]);
-            }
+            else Serial.println("Choice unaccepted: " + remoteString[i]);
           }
           case  9://when click 0
           case 14://when click 3
@@ -629,10 +550,7 @@ void loop() {
               numericKey = remoteString[i];
               numericKeyAvailable = true;
             }
-            else 
-            {
-              if(debugMode) Serial.println("Numeric unaccepted: " + remoteString[i]);
-            }
+            else Serial.println("Numeric unaccepted: " + remoteString[i]);
             break;
           }
           default:
