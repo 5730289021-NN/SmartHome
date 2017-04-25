@@ -10,6 +10,8 @@ Feature
 - Fix RTC hardware bugs
 - etc.
 
+Demostration Clip     https://www.youtube.com/watch?v=_ZXuGk1eybU
+
 Special Library used
 
 DS1302            https://github.com/msparks/arduino-ds1302
