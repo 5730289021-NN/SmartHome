@@ -98,7 +98,7 @@ void fadeout(int _time) {
 }
 
 void trig(bool state){
-  digitalWrite(relayPin,state);
+  digitalWrite(relayPin,!state);
   if(soundEnb)
   {
     for(int i = 0;i<5;i++)
@@ -168,7 +168,9 @@ void setup() {
   //TimerOne
   Timer1.initialize(1000000);
   Timer1.attachInterrupt(updateTime); // after 1 second,it will perform 'updateTime' function
-  
+  //
+  pinMode(relayPin, OUTPUT);
+  digitalWrite(relayPin, HIGH);
 }
 
 void loop() {
@@ -211,6 +213,7 @@ void loop() {
       {
         lcdDisplay("Alarm - " + alarmTime,"1.Clear Alarm");
         choiceInputAvailable = true;
+        numericKeyAvailable = false;
         if(choiceKeyAvailable)
         {
           choiceInputAvailable = false;
@@ -408,7 +411,7 @@ void loop() {
         rtc.halt(false);
         Time _t = rtc.time();
         Time t(_t.yr, _t.mon, _t.date, _hour.toInt(), _minute.toInt(), _second.toInt(), _t.day);
-        //Time t(2017, 4, 24, _hour.toInt(), _minute.toInt(), _second.toInt(), _t.day);
+        //Time t(2017, 4, 25, _hour.toInt(), _minute.toInt(), _second.toInt(), Time::kTuesday);
         rtc.time(t);
         rtc.writeProtect(true);
         mode = 0;
