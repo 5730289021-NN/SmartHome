@@ -11,6 +11,9 @@ Feature
 - etc.
 
 Special Library used
+
 DS1302            https://github.com/msparks/arduino-ds1302
+
 IRremote          https://github.com/z3t0/Arduino-IRremote
+
 TimerOne          https://github.com/PaulStoffregen/TimerOne
