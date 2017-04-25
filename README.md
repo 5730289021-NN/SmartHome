@@ -1,4 +1,4 @@
-# SmartHome 5.4
+# SmartHome 5.2
 A timer to turn on/off home devices with end-to-end implementation.
 
 Feature
